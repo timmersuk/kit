@@ -169,24 +169,31 @@ func (cw *CloudWatch) Send() error {
 	defer cw.mtx.RUnlock()
 	now := time.Now()
 
+	var storageResolution int64 = 60
+	if cw.highResolutionStorage {
+		storageResolution = 1
+	}
+
 	var datums []*cloudwatch.MetricDatum
 
 	cw.counters.Reset().Walk(func(name string, lvs lv.LabelValues, values []float64) bool {
 		value := sum(values)
 		datums = append(datums, &cloudwatch.MetricDatum{
-			MetricName: aws.String(name),
-			Dimensions: makeDimensions(lvs...),
-			Value:      aws.Float64(value),
-			Timestamp:  aws.Time(now),
+			MetricName:        aws.String(name),
+			Dimensions:        makeDimensions(lvs...),
+			Value:             aws.Float64(value),
+			Timestamp:         aws.Time(now),
+			StorageResolution: aws.Int64(storageResolution),
 		})
 		return true
 	})
 
 	cw.gauges.Reset().Walk(func(name string, lvs lv.LabelValues, values []float64) bool {
 		datum := &cloudwatch.MetricDatum{
-			MetricName: aws.String(name),
-			Dimensions: makeDimensions(lvs...),
-			Timestamp:  aws.Time(now),
+			MetricName:        aws.String(name),
+			Dimensions:        makeDimensions(lvs...),
+			Timestamp:         aws.Time(now),
+			StorageResolution: aws.Int64(storageResolution),
 		}
 
 		if len(values) == 0 {
@@ -218,11 +225,6 @@ func (cw *CloudWatch) Send() error {
 	// 0.999 -> "99.9"
 	formatPerc := func(p float64) string {
 		return strconv.FormatFloat(p*100, 'f', -1, 64)
-	}
-
-	var storageResolution int64 = 60
-	if cw.highResolutionStorage {
-		storageResolution = 1
 	}
 
 	cw.histograms.Reset().Walk(func(name string, lvs lv.LabelValues, values []float64) bool {
