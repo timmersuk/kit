@@ -44,8 +44,7 @@ type CloudWatch struct {
 	percentiles           []float64 // percentiles to track
 	logger                log.Logger
 	numConcurrentRequests int
-
-	storageResolution int
+	highResolutionStorage bool
 }
 
 type option func(*CloudWatch)
@@ -89,7 +88,7 @@ func WithConcurrentRequests(n int) option {
 
 func WithHighResolutionStorage() option {
 	return func(c *CloudWatch) {
-		c.storageResolution = 1
+		c.highResolutionStorage = true
 	}
 }
 
@@ -108,7 +107,7 @@ func New(namespace string, svc cloudwatchiface.CloudWatchAPI, options ...option)
 		numConcurrentRequests: 10,
 		logger:                log.NewLogfmtLogger(os.Stderr),
 		percentiles:           []float64{0.50, 0.90, 0.95, 0.99},
-		storageResolution:     60,
+		highResolutionStorage: false,
 	}
 
 	for _, optFunc := range options {
@@ -221,6 +220,11 @@ func (cw *CloudWatch) Send() error {
 		return strconv.FormatFloat(p*100, 'f', -1, 64)
 	}
 
+	var storageResolution int64 = 60
+	if cw.highResolutionStorage {
+		storageResolution = 1
+	}
+
 	cw.histograms.Reset().Walk(func(name string, lvs lv.LabelValues, values []float64) bool {
 		histogram := generic.NewHistogram(name, 50)
 
@@ -235,7 +239,7 @@ func (cw *CloudWatch) Send() error {
 				Dimensions:        makeDimensions(lvs...),
 				Value:             aws.Float64(value),
 				Timestamp:         aws.Time(now),
-				StorageResolution: aws.Int64(cw.storageResolution),
+				StorageResolution: aws.Int64(storageResolution),
 			})
 		}
 		return true
