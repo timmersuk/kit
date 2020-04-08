@@ -44,6 +44,8 @@ type CloudWatch struct {
 	percentiles           []float64 // percentiles to track
 	logger                log.Logger
 	numConcurrentRequests int
+
+	storageResolution int
 }
 
 type option func(*CloudWatch)
@@ -85,6 +87,12 @@ func WithConcurrentRequests(n int) option {
 	}
 }
 
+func WithHighResolutionStorage() option {
+	return func(c *CloudWatch) {
+		c.storageResolution = 1
+	}
+}
+
 // New returns a CloudWatch object that may be used to create metrics.
 // Namespace is applied to all created metrics and maps to the CloudWatch namespace.
 // Callers must ensure that regular calls to Send are performed, either
@@ -100,6 +108,7 @@ func New(namespace string, svc cloudwatchiface.CloudWatchAPI, options ...option)
 		numConcurrentRequests: 10,
 		logger:                log.NewLogfmtLogger(os.Stderr),
 		percentiles:           []float64{0.50, 0.90, 0.95, 0.99},
+		storageResolution:     60,
 	}
 
 	for _, optFunc := range options {
@@ -222,10 +231,11 @@ func (cw *CloudWatch) Send() error {
 		for _, perc := range cw.percentiles {
 			value := histogram.Quantile(perc)
 			datums = append(datums, &cloudwatch.MetricDatum{
-				MetricName: aws.String(fmt.Sprintf("%s_%s", name, formatPerc(perc))),
-				Dimensions: makeDimensions(lvs...),
-				Value:      aws.Float64(value),
-				Timestamp:  aws.Time(now),
+				MetricName:        aws.String(fmt.Sprintf("%s_%s", name, formatPerc(perc))),
+				Dimensions:        makeDimensions(lvs...),
+				Value:             aws.Float64(value),
+				Timestamp:         aws.Time(now),
+				StorageResolution: aws.Int64(cw.storageResolution),
 			})
 		}
 		return true
